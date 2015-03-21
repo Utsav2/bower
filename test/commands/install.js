@@ -39,6 +39,8 @@ describe('bower install', function () {
 
     var gitPackage = new helpers.TempDir();
 
+    var lockFile = {};
+
     it('writes to bower.json if --save flag is used', function () {
         package.prepare();
 
@@ -275,32 +277,30 @@ describe('bower install', function () {
     });
 
     it('generates a lockFile', function () {
-        package.prepare();
-
         tempDir.prepare({
             'bower.json': {
-                name: 'test'
-            },
-            dependencies: {
-                package: package.path
+                name: 'test',
+                dependencies: {
+                    packageGit: gitPackage.path + '#1.0.0'
+                }
             }
         });
 
         return helpers.run(install).then(function() {
-            expect(tempDir.readJson('bower.lock')).to.not.be(undefined);
-            expect(tempDir.readJson('bower.lock')).to.not.eql({});
+            var lockFileContents = tempDir.readJson('bower.lock');
+            expect(lockFileContents).to.not.be(undefined);
+            expect(lockFileContents).to.not.eql({});
+            lockFile = lockFileContents;
         });
     });
 
     it('requires a lockFile when production', function (next) {
-        package.prepare();
-
         tempDir.prepare({
             'bower.json': {
-                name: 'test'
-            },
-            dependencies: {
-                package: package.path
+                name: 'test',
+                dependencies: {
+                    packageGit: gitPackage.path + '#1.0.0'
+                }
             }
         });
 
@@ -308,6 +308,93 @@ describe('bower install', function () {
             next(new Error('Error not thrown as expected'));
         }, function() {
             next();
+        });
+    });
+
+    it('installs from lockFile when exists', function (next) {
+        tempDir.prepare({
+            'bower.json': {
+                name: 'test',
+                dependencies: {
+                    packageGit: gitPackage.path + '#1.0.0'
+                }
+            },
+            'bower.lock': lockFile
+        });
+
+        return helpers.run(install).then(function() {
+            next();
+        }, function() {
+            next();
+        });
+    });
+
+    it('error when tampering with version number', function (next) {
+        tempDir.prepare({
+            'bower.json': {
+                name: 'test',
+                dependencies: {
+                    packageGit: gitPackage.path + '#1.0.1'
+                }
+            },
+            'bower.lock': lockFile
+        });
+
+        return helpers.run(install).then(function() {
+            next(new Error('Error not thrown as expected'));
+        }, function() {
+            next();
+        });
+    });
+
+    it('new dependencies added in bower.json are installed', function () {
+        package.prepare();
+
+        tempDir.prepare({
+            'bower.json': {
+                name: 'test',
+                dependencies: {
+                    packageGit: gitPackage.path + '#1.0.0',
+                    package: '0.1.1'
+                }
+            },
+            'bower.lock': lockFile
+        });
+
+        return helpers.run(install).then(function() {
+            expect(tempDir.read('bower_components/package/bower.json')).to.contain('"version": "0.1.1"');
+            var lockFileContents = tempDir.read('bower.lock');
+            expect(lockFileContents).to.contain('"package"');
+            expect(lockFileContents).to.contain('"_release": "0.1.1"');
+            lockFile = lockFileContents;
+        });
+    });
+
+    it('should install from lock file', function () {
+        package.prepare();
+
+        // Modify the lock file to match
+        // test bower.json to test that
+        // even though a newer version is available
+        // the lock file is installing what it has
+        lockFile = JSON.parse(lockFile);
+        lockFile.dependencies.package.endpoint.target = '~0.1.0';
+
+        tempDir.prepare({
+            'bower.json': {
+                name: 'test',
+                dependencies: {
+                    packageGit: gitPackage.path + '#1.0.0',
+                    package: '~0.1.0'
+                }
+            },
+            'bower.lock': lockFile
+        });
+
+        return helpers.run(install).then(function() {
+            expect(tempDir.read('bower_components/package/bower.json')).to.contain('"version": "0.1.1"');
+            expect(tempDir.read('bower.lock')).to.contain('"package"');
+            expect(tempDir.read('bower.lock')).to.contain('"_release": "0.1.1"');
         });
     });
 });
